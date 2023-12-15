@@ -146,6 +146,9 @@ def create_app(db_URI="", test_config=None):
         new_category = body.get("category", None)
 
         try:
+            if new_question is None or new_answer is None or new_difficulty is None or new_category is None:
+                abort(422)
+
             question = Question(question=new_question, answer=new_answer,
                                 difficulty=new_difficulty, category=new_category)
             question.insert()
@@ -305,5 +308,9 @@ def create_app(db_URI="", test_config=None):
     @app.errorhandler(400)
     def bad_request(error):
         return jsonify({"success": False, "error": 400, "message": "bad request"}), 400
+
+    @app.errorhandler(500)
+    def server_error(error):
+        return jsonify({"success": False, "error": 500, "message": "server error"}), 500
 
     return app

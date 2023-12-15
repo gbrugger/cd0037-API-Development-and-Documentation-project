@@ -2,6 +2,7 @@
 __pycache__
 venv
 build/
+.env
 
 # OS generated files #
 ######################
