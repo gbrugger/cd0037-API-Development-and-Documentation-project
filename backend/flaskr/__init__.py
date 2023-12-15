@@ -3,30 +3,62 @@ from flask import Flask, request, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import random
+import json
 
 from models import setup_db, Question, Category
 
 QUESTIONS_PER_PAGE = 10
 
-def create_app(test_config=None):
+
+def paginate_questions(request, selection):
+    page = request.args.get("page", 1, type=int)
+    start = (page - 1) * QUESTIONS_PER_PAGE
+    end = start + QUESTIONS_PER_PAGE
+
+    questions = [question.format() for question in selection]
+    current_questions = questions[start:end]
+
+    return current_questions
+
+
+def create_app(db_URI="", test_config=None):
     # create and configure the app
     app = Flask(__name__)
-    setup_db(app)
+    if db_URI:
+        setup_db(app, db_URI)
+    else:
+        setup_db(app)
 
-    """
-    @TODO: Set up CORS. Allow '*' for origins. Delete the sample route after completing the TODOs
-    """
+    CORS(app)
+    # CORS Headers
 
-    """
-    @TODO: Use the after_request decorator to set Access-Control-Allow
-    """
+    @app.after_request
+    def after_request(response):
+        response.headers.add(
+            "Access-Control-Allow-Headers", "Content-Type,Authorization,true"
+        )
+        response.headers.add(
+            "Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS"
+        )
+        return response
 
     """
     @TODO:
     Create an endpoint to handle GET requests
     for all available categories.
     """
+    @app.route("/categories")
+    def retrieve_categories():
+        return jsonify({"success": True, "categories": get_categories()})
 
+    def get_categories():
+        selection = Category.query.order_by(Category.id).all()
+        categories = [category.format() for category in selection]
+
+        if len(categories) == 0:
+            abort(404)
+
+        return categories
 
     """
     @TODO:
@@ -40,6 +72,23 @@ def create_app(test_config=None):
     ten questions per page and pagination at the bottom of the screen for three pages.
     Clicking on the page numbers should update the questions.
     """
+    @app.route("/questions")
+    def retrieve_questions():
+        selection = Question.query.order_by(Question.id).all()
+        current_questions = list(paginate_questions(request, selection))
+
+        if len(current_questions) == 0:
+            abort(404)
+
+        return jsonify(
+            {
+                "success": True,
+                "questions": current_questions,
+                "total_questions": len(Question.query.all()),
+                "categories": get_categories(),
+                "current_category": "Does not make any sense here"
+            }
+        )
 
     """
     @TODO:
@@ -99,4 +148,3 @@ def create_app(test_config=None):
     """
 
     return app
-
