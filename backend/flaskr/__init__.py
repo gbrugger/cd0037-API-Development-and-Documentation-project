@@ -2,6 +2,7 @@ import os
 from flask import Flask, request, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 import random
 import json
 
@@ -53,7 +54,7 @@ def create_app(db_URI="", test_config=None):
 
     def get_categories():
         selection = Category.query.order_by(Category.id).all()
-        categories = [category.format() for category in selection]
+        categories = {category.id: category.type for category in selection}
 
         if len(categories) == 0:
             abort(404)
@@ -98,6 +99,33 @@ def create_app(db_URI="", test_config=None):
     This removal will persist in the database and when you refresh the page.
     """
 
+    @app.route("/questions/<int:question_id>", methods=["DELETE"])
+    def delete_question(question_id):
+        try:
+            question = Question.query.filter(
+                Question.id == question_id).one_or_none()
+
+            if question is None:
+                abort(404)
+
+            question.delete()
+            selection = Question.query.order_by(Question.id).all()
+            current_questions = paginate_questions(request, selection)
+
+            return jsonify(
+                {
+                    "success": True,
+                    "deleted": question_id,
+                    "books": current_questions,
+                    "total_questionss": len(Question.query.all()),
+                }
+            )
+
+        except HTTPException as e:
+            raise e
+        except:
+            abort(422)
+
     """
     @TODO:
     Create an endpoint to POST a new question,
@@ -108,6 +136,34 @@ def create_app(db_URI="", test_config=None):
     the form will clear and the question will appear at the end of the last page
     of the questions list in the "List" tab.
     """
+    @app.route("/questions", methods=["POST"])
+    def create_question():
+        body = request.get_json()
+
+        new_question = body.get("question", None)
+        new_answer = body.get("answer", None)
+        new_difficulty = body.get("difficulty", None)
+        new_category = body.get("category", None)
+
+        try:
+            question = Question(question=new_question, answer=new_answer,
+                                difficulty=new_difficulty, category=new_category)
+            question.insert()
+
+            selection = Question.query.order_by(Question.id).all()
+            current_questions = paginate_questions(request, selection)
+
+            return jsonify(
+                {
+                    "success": True,
+                    "created": question.id,
+                    "questions": current_questions,
+                    "total_questions": len(Question.query.all()),
+                }
+            )
+
+        except:
+            abort(422)
 
     """
     @TODO:
@@ -119,6 +175,31 @@ def create_app(db_URI="", test_config=None):
     only question that include that string within their question.
     Try using the word "title" to start.
     """
+    @app.route("/questions/search", methods=["POST"])
+    def search_question():
+        try:
+            body = request.get_json()
+            term = body.get("searchTerm", None)
+            selection = Question.query.filter(
+                Question.question.icontains(term)).all()
+            current_questions = list(paginate_questions(request, selection))
+
+            if len(selection) == 0:
+                abort(404)
+
+            return jsonify(
+                {
+                    "success": True,
+                    "questions": current_questions,
+                    "total_questions": len(selection),
+                    "current_category": "Does not make any sense here"
+                }
+            )
+
+        except HTTPException as e:
+            raise e
+        except:
+            abort(422)
 
     """
     @TODO:
@@ -128,6 +209,26 @@ def create_app(db_URI="", test_config=None):
     categories in the left column will cause only questions of that
     category to be shown.
     """
+    @app.route("/categories/<int:id>/questions")
+    def retrieve_category_questions(id):
+        selection = Question.query.filter(
+            Question.category == id).all()
+
+        if len(selection) == 0:
+            abort(404)
+
+        current_questions = list(paginate_questions(request, selection))
+        current_category = Category.query.filter(
+            Category.id == id).one_or_none()
+
+        return jsonify(
+            {
+                "success": True,
+                "questions": current_questions,
+                "total_questions": len(selection),
+                "current_category": current_category.format()
+            }
+        )
 
     """
     @TODO:
@@ -140,11 +241,69 @@ def create_app(db_URI="", test_config=None):
     one question at a time is displayed, the user is allowed to answer
     and shown whether they were correct or not.
     """
+    @app.route("/quizzes", methods=["POST"])
+    def play():
+        try:
+            body = request.get_json()
+            category = body.get("quiz_category", None)
+            id = category['id']
+            previousQuestions = body.get('previous_questions', None)
+
+            query = Question.query.filter(
+                Question.id.notin_(previousQuestions))
+
+            if id != 0:
+                query = query.filter(Question.category == id)
+
+            selection = query.all()
+            if len(selection) == 0:
+                abort(404)
+
+            question = random.choice(selection)
+
+            return jsonify(
+                {
+                    "success": True,
+                    "question": question.format(),
+                }
+            )
+
+        except HTTPException as e:
+            raise e
+        except:
+            abort(422)
 
     """
     @TODO:
     Create error handlers for all expected errors
     including 404 and 422.
     """
+    @app.errorhandler(404)
+    def not_found(error):
+        return (
+            jsonify({"success": False, "error": 404,
+                    "message": "resource not found"}),
+            404,
+        )
+
+    @app.errorhandler(405)
+    def not_allowed(error):
+        return (
+            jsonify({"success": False, "error": 405,
+                    "message": "method not allowed"}),
+            405,
+        )
+
+    @app.errorhandler(422)
+    def unprocessable(error):
+        return (
+            jsonify({"success": False, "error": 422,
+                    "message": "unprocessable"}),
+            422,
+        )
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        return jsonify({"success": False, "error": 400, "message": "bad request"}), 400
 
     return app
